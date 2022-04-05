@@ -1,0 +1,34 @@
+pipeline {
+agent {
+  node { label 'master' }
+}
+tools {
+      oc 'crc'
+  }
+    stages {
+
+                stage ('Create New Project') {
+                    steps {
+                    script {
+                        openshift.withCluster( CLUSTER_NAME ) {
+                                openshift.newProject( PROJECT_NAME )
+                        }
+                    }    
+                    }
+                }
+
+                stage ('Deploy App') { 
+                    steps {
+                    script {
+                        openshift.withCluster( CLUSTER_NAME ) {
+                                openshift.withProject( PROJECT_NAME ) {
+                                                echo "Hello from project ${openshift.project()} in cluster ${openshift.cluster()}"
+                                                def created = openshift.newApp( 'openjdk-11-rhel8:1.0~https://github.com/malam84/springboot-hello-world2.git' )
+                                                echo "new-app created ${created.count()} objects named: ${created.names()}"
+                                }
+                        }       
+                    }
+                    }
+                }
+    }
+}

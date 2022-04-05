@@ -1,0 +1,99 @@
+pipeline {
+  agent any
+  tools {
+        maven 'maven-3.8.5'
+        oc 'crc'
+    }
+  stages {
+        stage ('Initialize') {
+          steps {
+              sh '''
+                  echo "PATH = ${PATH}"
+                  echo "M2_HOME = ${M2_HOME}"
+              '''
+          }
+        }
+        stage('Build App') {
+          steps {
+            git branch: "master", url: "https://github.com/malam84/springboot-ocp4-s2i-hello.git"
+            sh "mvn install -DskipTests=true"
+          }
+        }
+        
+      stage('Create Image Builder') {
+      when {
+        expression {
+          openshift.withCluster("CRC") {
+            openshift.withProject("test-pipe") {
+              return !openshift.selector("bc", "springboot-ocp4-s2i-hello").exists();
+            }
+          }
+        }
+      }
+      steps {
+        script {
+          openshift.withCluster("CRC") {
+            openshift.withProject("test-pipe") {
+              openshift.newBuild("--name=springboot-ocp4-s2i-hello", "--image-stream=openjdk-11-rhel7:1.0", "--binary=true")
+            }
+          }
+        }
+      }
+    }
+    stage('Build Image') {
+      steps {
+        sh "rm -rf oc-build && mkdir -p oc-build/deployments"
+        sh "cp target/springboot-ocp4-s2i-hello-0.0.1-SNAPSHOT.jar oc-build/deployments/springboot-ocp4-s2i-hello.jar"
+        
+        script {
+          openshift.withCluster("CRC") {
+            openshift.withProject("test-pipe") {
+              openshift.selector("bc", "springboot-ocp4-s2i-hello").startBuild("--from-dir=oc-build", "--wait=true")
+            }
+          }
+        }
+      }
+    }
+    stage('Create DEV') {
+      when {
+        expression {
+          openshift.withCluster("CRC") {
+            openshift.withProject("test-pipe") {
+              return !openshift.selector('dc', 'springboot-ocp4-s2i-hello').exists()
+            }
+          }
+        }
+      }
+      steps {
+        script {
+          openshift.withCluster("CRC") {
+            openshift.withProject("test-pipe") {
+              def app = openshift.newApp("springboot-ocp4-s2i-hello:latest")
+              app.narrow("svc").expose();
+
+              openshift.set("probe dc/springboot-ocp4-s2i-hello --readiness --get-url=http://localhost:8081/ws/demo/healthcheck --initial-delay-seconds=30 --failure-threshold=10 --period-seconds=10")
+              openshift.set("probe dc/springboot-ocp4-s2i-hello --liveness  --get-url=http://localhost:8081/ws/demo/healthcheck --initial-delay-seconds=180 --failure-threshold=10 --period-seconds=10")
+
+              def dc = openshift.selector("dc", "springboot-ocp4-s2i-hello")
+              while (dc.object().spec.replicas != dc.object().status.availableReplicas) {
+                  sleep 10
+              }
+              openshift.set("triggers", "dc/springboot-ocp4-s2i-hello", "--manual")
+            }
+          }
+        }
+      }
+    }
+    stage('Deploy DEV') {
+      steps {
+        script {
+          openshift.withCluster("CRC") {
+            openshift.withProject("test-pipe") {
+              openshift.selector("dc", "springboot-ocp4-s2i-hello").rollout().latest();
+            }
+          }
+        }
+      }
+    }   
+  }
+}

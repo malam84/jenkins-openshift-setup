@@ -1,0 +1,96 @@
+kind: "Template"
+apiVersion: "template.openshift.io/v1"
+metadata:
+  name: "springboot-ocp4-s2i-hello"
+  annotations:
+    description: "Application template for springboot-helloworld  applications"
+    tags: "quickstart,java,springboot"
+    iconClass: ''
+objects:
+- kind: "ImageStream"
+  apiVersion: "image.openshift.io/v1"
+  metadata:
+    name: "springboot-ocp4-s2i-hello"
+    labels:
+      app: "springboot-ocp4-s2i-hello"
+  spec:
+    lookupPolicy:
+      local: false
+  status:
+- kind: "BuildConfig"
+  apiVersion: "build.openshift.io/v1"
+  metadata:
+    name: "springboot-ocp4-s2i-hello"
+    labels:
+      app: "springboot-ocp4-s2i-hello"
+  spec:
+    output:
+      to:
+        kind: "ImageStreamTag"
+        name: 'springboot-ocp4-s2i-hello:latest'
+    resources: {}
+    successfulBuildsHistoryLimit: 5
+    failedBuildsHistoryLimit: 5
+    strategy:
+      type: "Source"
+      sourceStrategy:
+        from:
+          kind: "ImageStreamTag"
+          namespace: "openshift"
+          name: 'java:openjdk-11-el7'
+    postCommit: {}
+    source:
+      type: "Git"
+      git:
+        uri: 'https://github.com/malam84/springboot-ocp4-s2i-hello.git'
+      contextDir: /
+    triggers:
+      - type: "ImageChange"
+      - type: "ConfigChange"
+    runPolicy: "Serial"
+  status:
+    lastVersion: 1
+- kind: "Service"
+  apiVersion: "v1"
+  metadata:
+    name: "springboot-ocp4-s2i-hello"
+    labels:
+      app: "springboot-ocp4-s2i-hello"
+  spec:
+    ports:
+      - name: "8080-tcp"
+        protocol: "TCP"
+        port: 8080
+        targetPort: 8080
+    selector:
+      name: "springboot-ocp4-s2i-hello"
+- kind: "DeploymentConfig"
+  apiVersion: "v1"
+  metadata:
+    name: "springboot-ocp4-s2i-hello"
+  spec:
+    template: 
+      metadata:
+        labels:
+          name: "springboot-ocp4-s2i-hello"
+      spec:
+        containers:
+          - name: "springboot-ocp4-s2i-hello"
+            image: "springboot-ocp4-s2i-hello"
+            ports:
+              - containerPort: 8080
+                protocol: "TCP"
+    replicas: 1
+    triggers:
+      - type: "ConfigChange" 
+      - type: "ImageChange" 
+        imageChangeParams:
+          automatic: true
+          containerNames:
+            - "springboot-ocp4-s2i-hello"
+          from:
+            kind: "ImageStreamTag"
+            name: "springboot-ocp4-s2i-hello:latest"
+    strategy: 
+      type: "Rolling"
+    paused: false 
